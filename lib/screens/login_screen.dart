@@ -1,6 +1,8 @@
-import 'dart:convert';
+// lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import '../services/api_service.dart';
+import 'warden_dashboard.dart'; // import your Warden Dashboard
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -10,125 +12,142 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  bool _isLoading = false;
-  String? _errorMessage;
+  final TextEditingController emailController = TextEditingController();
+  final TextEditingController passwordController = TextEditingController();
+  bool loading = false;
 
-  // ⚠️ CHANGE THIS to match your local IP or emulator
-  final String _baseUrl = "http://10.0.2.2:8000/api/login"; // Android emulator
-
-  Future<void> _loginUser() async {
+  void login() async {
     setState(() {
-      _isLoading = true;
-      _errorMessage = null;
+      loading = true;
     });
 
-    final email = _emailController.text.trim();
-    final password = _passwordController.text.trim();
+    final response = await ApiService.login(
+      emailController.text.trim(),
+      passwordController.text.trim(),
+    );
 
-    if (email.isEmpty || password.isEmpty) {
-      setState(() {
-        _isLoading = false;
-        _errorMessage = "Please enter both email and password.";
-      });
-      return;
-    }
+    if (!mounted) return;
 
-    try {
-      final response = await http.post(
-        Uri.parse(_baseUrl),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"email": email, "password": password}),
+    setState(() {
+      loading = false;
+    });
+
+    if (response['success']) {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setString('token', response['token']);
+      await prefs.setString('name', response['name']);
+
+      if (!mounted) return;
+      // Navigate to WardenDashboard instead of old placeholder
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const WardenDashboard()),
       );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-
-        if (data['access_token'] != null) {
-
-          // You can save token here using shared_preferences if needed
-          Navigator.pushReplacementNamed(context, '/dashboard');
-        } else {
-          setState(() {
-            _errorMessage = data['message'] ?? "Login failed.";
-          });
-        }
-      } else {
-        setState(() {
-          _errorMessage = "Invalid credentials or server error.";
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _errorMessage = "Connection error: ${e.toString()}";
-      });
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(response['message'] ?? 'Login failed')),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.blue.shade50,
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Card(
-            elevation: 10,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
+      backgroundColor: const Color(0xFF1A1A1A),
+      body: Stack(
+        children: [
+          Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    'Warden Login',
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  const Icon(
+                    Icons.local_police,
+                    color: Colors.white,
+                    size: 72,
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Traffic Warden Login',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
                   TextField(
-                    controller: _emailController,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(
-                      labelText: 'Email',
-                      border: OutlineInputBorder(),
+                    controller: emailController,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.person, color: Colors.white70),
+                      labelText: 'Email or ID',
+                      labelStyle: const TextStyle(color: Colors.white70),
+                      filled: true,
+                      fillColor: Colors.white12,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
                   TextField(
-                    controller: _passwordController,
+                    controller: passwordController,
                     obscureText: true,
-                    decoration: const InputDecoration(
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.lock, color: Colors.white70),
                       labelText: 'Password',
-                      border: OutlineInputBorder(),
+                      labelStyle: const TextStyle(color: Colors.white70),
+                      filled: true,
+                      fillColor: Colors.white12,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 24),
-                  _isLoading
-                      ? const CircularProgressIndicator()
-                      : ElevatedButton(
-                          onPressed: _loginUser,
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
-                          ),
-                          child: const Text('Login'),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: login,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blueAccent,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                  if (_errorMessage != null) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      _errorMessage!,
-                      style: const TextStyle(color: Colors.red),
+                      ),
+                      child: const Text(
+                        'Login',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
                     ),
-                  ],
+                  ),
+                  const SizedBox(height: 16),
+                  TextButton(
+                    onPressed: () {
+                      // Add support or forgot password handling
+                    },
+                    child: const Text(
+                      'Need Help?',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
-        ),
+          if (loading)
+            Container(
+              color: Colors.black54,
+              child: const Center(
+                child: CircularProgressIndicator(color: Colors.white),
+              ),
+            ),
+        ],
       ),
     );
   }
